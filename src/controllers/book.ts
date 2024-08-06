@@ -6,6 +6,7 @@ import { plainToClass } from 'class-transformer';
 import { validate } from 'class-validator';
 import { InternalServerErrorException } from '../exceptions/server-error';
 import { CreateBookDto } from '../dto/book.dto';
+import { NotFoundException } from '../exceptions/not-found';
 
 export const createBook = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -43,6 +44,37 @@ export const getAllBooks = async (req: Request, res: Response, next: NextFunctio
         const books = await prismaClient.book.findMany();
         
         res.json(books);
+    } catch (e: unknown) {
+        return next(new InternalServerErrorException('Unable to retrieve data from DB!', ErrorCode.SERVER_ERROR));
+    }
+};
+
+export const getBook = async (req: Request, res: Response, next: NextFunction) => {
+    const bookId = parseInt(req.params.bookId);
+
+    try {
+        const book = await prismaClient.book.findUnique({
+            where: { id: bookId },
+            include: { borrowRecords: true },
+        });
+
+        if (!book) {
+            return next(new NotFoundException('Book not found.', ErrorCode.BOOK_NOT_FOUND));
+        }
+
+        const scores = book.borrowRecords
+            .filter(record => record.score !== null)
+            .map(record => record.score as number);
+        
+        const averageScore = scores.length > 0
+            ? scores.reduce((sum, score) => sum + score, 0) / scores.length
+            : -1;
+
+        res.json({
+            id: book.id,
+            name: book.name,
+            score: averageScore,
+        });
     } catch (e: unknown) {
         return next(new InternalServerErrorException('Unable to retrieve data from DB!', ErrorCode.SERVER_ERROR));
     }
